@@ -1,0 +1,9 @@
+fastapi
+uvicorn
+pandas
+scikit-learn
+supabase
+requests
+joblib
+pydantic
+python-dotenv
