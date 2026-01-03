@@ -15,8 +15,11 @@ import {
 // ==========================================
 // ⚠️ KONFIGURASI SUPABASE (WAJIB DIISI)
 // ==========================================
-const SUPABASE_URL = "https://zsanzmgxuvenhqjxsmna.supabase.co"
-const SUPABASE_KEY = "sb_publishable_m6BndGKy1wYBO07Qeum8cg_sk1h4ACw"
+const SUPABASE_URL = "https://zsanzmgxuvenhqjxsmna.supabase.co";
+const SUPABASE_KEY = "sb_publishable_m6BndGKy1wYBO07Qeum8cg_sk1h4ACw";
+
+// GANTI localhost dengan Variable dari Vercel
+const API_BASE = process.env.NEXT_PUBLIC_API_URL || "http://127.0.0.1:8000";
 
 const supabase = createClient(SUPABASE_URL, SUPABASE_KEY);
 
@@ -138,7 +141,7 @@ export default function Home() {
             // Init produk default untuk user baru (hanya jika user benar-benar baru dibuat)
             if (data.user.identities && data.user.identities.length > 0) {
               await axios.post(
-                "http://127.0.0.1:8000/products/init",
+                API_BASE + "/products/init",
                 {},
                 { headers: { "X-User-Id": data.user.id } }
               );
@@ -198,7 +201,7 @@ export default function Home() {
       setLoading(true);
       const headers = { "X-User-Id": userId };
 
-      const prodRes = await axios.get("http://127.0.0.1:8000/products", {
+      const prodRes = await axios.get(API_BASE + "/products", {
         headers,
       });
       setProducts(prodRes.data);
@@ -212,7 +215,7 @@ export default function Home() {
 
       await Promise.all(
         prodRes.data.map(async (p: Product) => {
-          let url = `http://127.0.0.1:8000/predict/${p.id}`;
+          let url = API_BASE + `/predict/${p.id}`;
           if (lat && lon) url += `?lat=${lat}&lon=${lon}`;
           try {
             const res = await axios.get(url, { headers });
@@ -226,14 +229,13 @@ export default function Home() {
       setPredictions(preds);
       setLocationName(loc);
 
-      const histRes = await axios.get("http://127.0.0.1:8000/sales/history", {
+      const histRes = await axios.get(API_BASE + "/sales/history", {
         headers,
       });
       setHistory(histRes.data);
-      const sumRes = await axios.get(
-        "http://127.0.0.1:8000/analytics/summary",
-        { headers }
-      );
+      const sumRes = await axios.get(API_BASE + "/analytics/summary", {
+        headers,
+      });
       setSummary(sumRes.data);
     } catch (error) {
       console.error(error);
@@ -249,7 +251,7 @@ export default function Home() {
     setSubmitLoading(true);
     try {
       await axios.post(
-        "http://127.0.0.1:8000/sales",
+        API_BASE + "/sales",
         {
           ...formData,
           product_id: Number(formData.product_id),
@@ -274,7 +276,7 @@ export default function Home() {
     setSubmitLoading(true);
     try {
       await axios.post(
-        "http://127.0.0.1:8000/restock",
+        API_BASE + "/restock",
         {
           ...restockData,
           product_id: Number(restockData.product_id),
@@ -297,7 +299,7 @@ export default function Home() {
     setRetrainLoading(true);
     try {
       await axios.post(
-        "http://127.0.0.1:8000/retrain",
+        API_BASE + "/retrain",
         {},
         { headers: { "X-User-Id": user.id } }
       );
