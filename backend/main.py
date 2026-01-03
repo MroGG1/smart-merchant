@@ -8,9 +8,10 @@ import pandas as pd
 from datetime import datetime, timedelta
 from typing import Optional
 import os
-from dotenv import load_dotenv 
+import random  # Penting untuk generate data dummy
+from dotenv import load_dotenv
 
-# Load environment variables dari file .env
+# Load environment variables
 load_dotenv()
 
 # Library MLOps
@@ -21,17 +22,16 @@ from sklearn.metrics import mean_absolute_error, r2_score
 app = FastAPI()
 
 # ==========================================
-# 🔐 KONFIGURASI AMAN (DARI .ENV)
+# 🔐 KONFIGURASI AMAN (DARI ENV)
 # ==========================================
 OWM_API_KEY = os.getenv("OWM_API_KEY")
 SUPABASE_URL = os.getenv("SUPABASE_URL")
 SUPABASE_KEY = os.getenv("SUPABASE_KEY")
 CITY_NAME = "Jakarta" 
 
-# Validasi Kunci (Debugging Lokal)
+# Validasi Kunci (Debugging di Logs)
 if not OWM_API_KEY or not SUPABASE_URL or not SUPABASE_KEY:
-    print("❌ ERROR CRITICAL: API Key tidak ditemukan di file .env!")
-    print("Pastikan file backend/.env sudah dibuat dan diisi.")
+    print("❌ ERROR CRITICAL: API Key tidak ditemukan. Cek Settings/Secrets!")
 
 # Inisialisasi Supabase
 try:
@@ -78,10 +78,9 @@ class ProductInput(BaseModel):
 # HELPER FUNCTIONS
 # ==========================================
 def get_current_weather_simple(lat=None, lon=None):
-    """Mengambil cuaca saat ini dalam Bahasa Indonesia"""
+    """Mengambil cuaca saat ini (Bahasa Indonesia)"""
     if not OWM_API_KEY: return "Hujan"
     
-    # Logic URL: Prioritaskan GPS jika ada
     url = f"http://api.openweathermap.org/data/2.5/weather?q={CITY_NAME}&appid={OWM_API_KEY}"
     if lat and lon:
         url = f"http://api.openweathermap.org/data/2.5/weather?lat={lat}&lon={lon}&appid={OWM_API_KEY}"
@@ -97,7 +96,7 @@ def get_current_weather_simple(lat=None, lon=None):
     except: return "Berawan"
 
 def get_weekly_weather(lat=None, lon=None):
-    """Mengambil ramalan cuaca 5 hari kedepan"""
+    """Mengambil ramalan cuaca 5 hari kedepan (Bahasa Indonesia)"""
     if not OWM_API_KEY: 
         return [{"date": "Besok", "main": "Hujan", "code": 2}] * 5, "Simulasi City"
     
@@ -117,6 +116,7 @@ def get_weekly_weather(lat=None, lon=None):
             if d_str not in seen:
                 if "12:00:00" in item['dt_txt'] or len(forecasts)==0:
                     w_raw = item['weather'][0]['main']
+                    
                     if w_raw == "Clear": w, c = "Cerah", 0
                     elif w_raw in ["Rain", "Drizzle", "Thunderstorm"]: w, c = "Hujan", 2
                     else: w, c = "Berawan", 1
@@ -148,20 +148,71 @@ def get_products(x_user_id: str = Header(None)):
         print(f"❌ Error: {e}")
         return []
 
-# --- 2. INIT PRODUCTS ---
+# --- 2. INIT PRODUCTS & SEED HISTORY (FITUR BARU) ---
 @app.post("/products/init")
 def init_products(x_user_id: str = Header(None)):
     if not x_user_id: raise HTTPException(401, "Unauthorized")
+    
+    # 1. Cek apakah user sudah punya produk
     existing = supabase.table('products').select("id").eq('user_id', x_user_id).execute()
-    if existing.data: return {"status": "skipped"}
+    if existing.data: return {"status": "skipped", "message": "User sudah ada"}
 
+    # 2. Buat Produk Default
     defaults = [
         {"user_id": x_user_id, "name": "Es Teh Manis", "stock": 50, "price": 5000},
         {"user_id": x_user_id, "name": "Mie Rebus Telur", "stock": 30, "price": 12000},
         {"user_id": x_user_id, "name": "Kopi Panas", "stock": 40, "price": 4000}
     ]
-    supabase.table('products').insert(defaults).execute()
-    return {"status": "success"}
+    res_prod = supabase.table('products').insert(defaults).execute()
+    new_products = res_prod.data
+
+    # 3. GENERATE DUMMY HISTORY (30 Hari ke belakang)
+    # Agar AI punya bahan belajar dan grafik tidak kosong
+    dummy_sales = []
+    end_date = datetime.now()
+    start_date = end_date - timedelta(days=30)
+
+    print(f"🌱 Seeding data untuk User: {x_user_id}...")
+
+    for i in range(31):
+        current_date = start_date + timedelta(days=i)
+        date_str = current_date.strftime('%Y-%m-%d')
+        
+        # Random Cuaca (Pura-pura)
+        weather_choices = ["Cerah", "Hujan", "Berawan"]
+        weather = random.choices(weather_choices, weights=[40, 30, 30])[0]
+
+        for prod in new_products:
+            qty = 0
+            # LOGIKA POLA AI (Agar AI terlihat pintar)
+            if weather == "Hujan":
+                if "Mie" in prod['name'] or "Kopi" in prod['name']:
+                    qty = random.randint(30, 50)
+                else: # Es Teh
+                    qty = random.randint(5, 15)
+            
+            elif weather == "Cerah":
+                if "Es Teh" in prod['name']:
+                    qty = random.randint(40, 60)
+                else:
+                    qty = random.randint(10, 20)
+            
+            else: # Berawan
+                qty = random.randint(15, 35)
+
+            dummy_sales.append({
+                "user_id": x_user_id,
+                "product_id": prod['id'],
+                "quantity_sold": qty,
+                "date": date_str,
+                "recorded_weather": weather
+            })
+
+    # Insert Batch Dummy Sales
+    if dummy_sales:
+        supabase.table('sales_log').insert(dummy_sales).execute()
+
+    return {"status": "success", "message": "Produk & Data Historis Siap!"}
 
 # --- 3. PREDICT ---
 @app.get("/predict/{product_id}")
@@ -271,6 +322,7 @@ def retrain(x_user_id: str = Header(None)):
         if not data: return {"status": "failed", "message": "Belum ada data"}
         
         df = pd.DataFrame(data)
+        # Mapping mendukung Inggris & Indonesia
         mapping = {'Clear': 0, 'Cerah': 0, 'Clouds': 1, 'Berawan': 1, 'Rain': 2, 'Hujan': 2}
         df['weather_code'] = df['recorded_weather'].map(mapping).fillna(1)
         

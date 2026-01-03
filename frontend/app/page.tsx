@@ -12,9 +12,6 @@ import {
   ResponsiveContainer,
 } from "recharts";
 
-// ==========================================
-// ⚠️ KONFIGURASI SUPABASE (WAJIB DIISI)
-// ==========================================
 const SUPABASE_URL = "https://zsanzmgxuvenhqjxsmna.supabase.co";
 const SUPABASE_KEY = "sb_publishable_m6BndGKy1wYBO07Qeum8cg_sk1h4ACw";
 
@@ -22,7 +19,6 @@ const SUPABASE_KEY = "sb_publishable_m6BndGKy1wYBO07Qeum8cg_sk1h4ACw";
 const API_BASE = process.env.NEXT_PUBLIC_API_URL || "http://127.0.0.1:8000";
 
 const supabase = createClient(SUPABASE_URL, SUPABASE_KEY);
-
 // --- INTERFACES ---
 interface Product {
   id: number;
@@ -54,15 +50,14 @@ interface AnalyticsSummary {
 }
 
 export default function Home() {
-  // --- AUTH STATE ---
+  // --- STATE ---
   const [user, setUser] = useState<User | null>(null);
   const [authEmail, setAuthEmail] = useState("");
   const [authPass, setAuthPass] = useState("");
   const [authLoading, setAuthLoading] = useState(false);
   const [isRegister, setIsRegister] = useState(false);
-  const [authError, setAuthError] = useState(""); // Pesan error login/register
+  const [authError, setAuthError] = useState("");
 
-  // --- APP STATE ---
   const [products, setProducts] = useState<Product[]>([]);
   const [predictions, setPredictions] = useState<ProductPrediction[]>([]);
   const [history, setHistory] = useState<SalesHistory[]>([]);
@@ -71,7 +66,6 @@ export default function Home() {
   const [loading, setLoading] = useState(false);
   const [locationName, setLocationName] = useState("Mencari Lokasi...");
 
-  // MODALS & FORMS
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [isRestockOpen, setIsRestockOpen] = useState(false);
   const [submitLoading, setSubmitLoading] = useState(false);
@@ -87,7 +81,29 @@ export default function Home() {
     quantity: 0,
   });
 
-  // --- 1. AUTHENTICATION LOGIC ---
+  // --- HELPER STYLE BARU (SUPAYA PESAN MUNCUL) ---
+  const getAdviceStyle = (advice: string) => {
+    // Hijau jika Laris/Banyak
+    if (
+      advice.includes("Laris") ||
+      advice.includes("Banyak") ||
+      advice.includes("🔥")
+    ) {
+      return "bg-green-100 text-green-700 border-green-200 ring-1 ring-green-200";
+    }
+    // Merah jika Sepi/Kurangi
+    if (
+      advice.includes("Sepi") ||
+      advice.includes("Kurangi") ||
+      advice.includes("⚠️")
+    ) {
+      return "bg-red-50 text-red-600 border-red-100 ring-1 ring-red-100";
+    }
+    // Abu-abu jika Normal
+    return "bg-slate-100 text-slate-500 border-slate-200";
+  };
+
+  // --- AUTH ---
   useEffect(() => {
     const checkSession = async () => {
       const { data } = await supabase.auth.getSession();
@@ -101,61 +117,45 @@ export default function Home() {
 
   const handleAuth = async (e: React.FormEvent) => {
     e.preventDefault();
-    setAuthError(""); // Reset error lama
+    setAuthError("");
     setAuthLoading(true);
 
-    // Validasi Sederhana
     if (authPass.length < 6) {
       setAuthError("Password minimal 6 karakter.");
       setAuthLoading(false);
       return;
     }
     if (!authEmail.includes("@")) {
-      setAuthError("Masukkan email yang valid.");
+      setAuthError("Email tidak valid.");
       setAuthLoading(false);
       return;
     }
 
     try {
       if (isRegister) {
-        // REGISTER FLOW
         const { data, error } = await supabase.auth.signUp({
           email: authEmail,
           password: authPass,
         });
-
         if (error) {
-          // Handle spesifik error "User already registered"
-          if (
-            error.message.includes("User already registered") ||
-            error.status === 400
-          ) {
-            setAuthError("Email ini sudah terdaftar. Silakan login.");
-            setIsRegister(false); // Pindah ke mode login otomatis
-          } else {
-            throw error;
-          }
+          if (error.message.includes("registered") || error.status === 400) {
+            setAuthError("Email sudah terdaftar. Silakan login.");
+            setIsRegister(false);
+          } else throw error;
         } else {
-          // Auto Login setelah daftar
           if (data.user) {
-            // Init produk default untuk user baru (hanya jika user benar-benar baru dibuat)
-            if (data.user.identities && data.user.identities.length > 0) {
+            if (data.user.identities?.length)
               await axios.post(
                 API_BASE + "/products/init",
                 {},
                 { headers: { "X-User-Id": data.user.id } }
               );
-            }
-
             setUser(data.user);
             initializeDashboard(data.user.id);
-            alert("🎉 Akun berhasil dibuat! Selamat datang.");
-          } else {
-            setAuthError("Cek email Anda untuk verifikasi.");
-          }
+            alert("🎉 Akun berhasil dibuat!");
+          } else setAuthError("Cek email untuk verifikasi.");
         }
       } else {
-        // LOGIN FLOW
         const { data, error } = await supabase.auth.signInWithPassword({
           email: authEmail,
           password: authPass,
@@ -168,8 +168,7 @@ export default function Home() {
       }
     } catch (error: any) {
       let msg = error.message;
-      if (msg.includes("Invalid login credentials"))
-        msg = "Email atau password salah.";
+      if (msg.includes("Invalid login")) msg = "Email atau password salah.";
       setAuthError(msg);
     } finally {
       setAuthLoading(false);
@@ -183,7 +182,7 @@ export default function Home() {
     setPredictions([]);
   };
 
-  // --- 2. DATA FETCHING ---
+  // --- DATA ---
   const initializeDashboard = (userId: string) => {
     if ("geolocation" in navigator) {
       navigator.geolocation.getCurrentPosition(
@@ -200,7 +199,6 @@ export default function Home() {
     try {
       setLoading(true);
       const headers = { "X-User-Id": userId };
-
       const prodRes = await axios.get(API_BASE + "/products", {
         headers,
       });
@@ -212,7 +210,6 @@ export default function Home() {
 
       const preds: ProductPrediction[] = [];
       let loc = "Lokasi Tidak Dikenal";
-
       await Promise.all(
         prodRes.data.map(async (p: Product) => {
           let url = API_BASE + `/predict/${p.id}`;
@@ -224,7 +221,6 @@ export default function Home() {
           } catch {}
         })
       );
-
       preds.sort((a, b) => a.product_id - b.product_id);
       setPredictions(preds);
       setLocationName(loc);
@@ -244,7 +240,7 @@ export default function Home() {
     }
   };
 
-  // --- 3. ACTIONS ---
+  // --- ACTIONS ---
   const handleSubmitSales = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!user) return;
@@ -298,12 +294,12 @@ export default function Home() {
     if (!user || !confirm("Latih ulang AI?")) return;
     setRetrainLoading(true);
     try {
-      await axios.post(
+      const res = await axios.post(
         API_BASE + "/retrain",
         {},
         { headers: { "X-User-Id": user.id } }
       );
-      alert("✅ AI Dilatih!");
+      alert(`✅ AI Dilatih!\nAkurasi Baru: ${res.data.accuracy.r2_score}`);
       fetchAllData(user.id);
     } catch {
       alert("Gagal");
@@ -327,37 +323,31 @@ export default function Home() {
       maximumFractionDigits: 0,
     }).format(n);
 
-  // ==========================================
-  // VIEW: LOGIN PAGE (OPTIMIZED UI)
-  // ==========================================
+  // VIEW: LOGIN
   if (!user) {
     return (
-      <div className="min-h-screen bg-slate-50 flex items-center justify-center p-4 font-sans relative overflow-hidden">
-        {/* Background Shapes */}
+      <div className="min-h-screen bg-slate-900 flex items-center justify-center p-4 font-sans relative overflow-hidden">
         <div className="absolute top-0 left-0 w-full h-full bg-slate-900 z-0"></div>
         <div className="absolute -top-20 -left-20 w-64 h-64 bg-blue-600 rounded-full blur-3xl opacity-20"></div>
         <div className="absolute bottom-20 right-20 w-80 h-80 bg-purple-600 rounded-full blur-3xl opacity-20"></div>
 
         <div className="bg-white/95 backdrop-blur-sm rounded-3xl p-8 w-full max-w-md shadow-2xl border border-white/20 z-10">
-          <div className="text-center mb-8">
+          <div className="text-center mb-6">
             <div className="text-5xl mb-3 animate-bounce inline-block">🏪</div>
             <h1 className="text-3xl font-extrabold text-slate-800 tracking-tight">
-              {isRegister ? "Mulai Bisnis Cerdas" : "Selamat Datang Kembali"}
+              {isRegister ? "Buat Akun Baru" : "Selamat Datang"}
             </h1>
             <p className="text-slate-500 text-sm mt-2">
               {isRegister
-                ? "Kelola stok & prediksi penjualan dengan AI"
-                : "Masuk untuk melihat dashboard & analisis"}
+                ? "Mulai bisnis cerdas dengan AI"
+                : "Masuk ke dashboard Anda"}
             </p>
           </div>
-
-          {/* ERROR BANNER */}
           {authError && (
             <div className="mb-6 p-4 bg-red-50 border-l-4 border-red-500 text-red-700 rounded-r-xl text-sm font-medium animate-pulse flex items-center gap-2">
               <span>⚠️</span> {authError}
             </div>
           )}
-
           <form onSubmit={handleAuth} className="space-y-5">
             <div>
               <label className="block text-xs font-bold text-slate-500 uppercase tracking-wide mb-1.5 ml-1">
@@ -390,24 +380,17 @@ export default function Home() {
                 </p>
               )}
             </div>
-
             <button
               disabled={authLoading}
-              className="w-full bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 text-white py-3.5 rounded-xl font-bold text-lg transition-all shadow-lg shadow-blue-500/30 hover:shadow-blue-500/50 hover:-translate-y-0.5 disabled:opacity-70 disabled:cursor-not-allowed disabled:transform-none mt-2"
+              className="w-full bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 text-white py-3.5 rounded-xl font-bold text-lg transition-all shadow-lg hover:-translate-y-0.5 disabled:opacity-70 mt-2"
             >
-              {authLoading ? (
-                <span className="flex items-center justify-center gap-2">
-                  <span className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin"></span>
-                  Memproses...
-                </span>
-              ) : isRegister ? (
-                "Buat Akun Gratis"
-              ) : (
-                "Masuk Dashboard"
-              )}
+              {authLoading
+                ? "Memproses..."
+                : isRegister
+                ? "Daftar Sekarang"
+                : "Masuk Dashboard"}
             </button>
           </form>
-
           <div className="mt-8 pt-6 border-t border-slate-100 text-center">
             <p className="text-sm text-slate-500 mb-2">
               {isRegister ? "Sudah punya akun?" : "Belum punya akun?"}
@@ -427,12 +410,9 @@ export default function Home() {
     );
   }
 
-  // ==========================================
-  // VIEW: DASHBOARD (UI OPTIMIZED)
-  // ==========================================
+  // VIEW: DASHBOARD
   return (
     <main className="min-h-screen bg-slate-50 font-sans text-slate-800 relative">
-      {/* NAVBAR */}
       <div className="sticky top-0 z-30 bg-white/80 backdrop-blur-md border-b border-slate-200">
         <div className="max-w-7xl mx-auto px-4 md:px-8 py-4 flex flex-col md:flex-row justify-between items-center gap-4">
           <div className="flex items-center gap-3">
@@ -451,7 +431,6 @@ export default function Home() {
               </div>
             </div>
           </div>
-
           <div className="flex gap-3 items-center w-full md:w-auto">
             <button
               onClick={handleRetrain}
@@ -464,7 +443,7 @@ export default function Home() {
                 <span className="group-hover:rotate-12 transition-transform">
                   ⚡
                 </span>
-              )}
+              )}{" "}
               {retrainLoading ? "Melatih..." : "Latih AI"}
             </button>
             <div className="hidden md:flex items-center gap-2 bg-slate-100 px-4 py-2 rounded-xl border border-slate-200">
@@ -491,9 +470,6 @@ export default function Home() {
                 <div className="p-3 bg-green-50 text-green-600 rounded-xl text-2xl group-hover:scale-110 transition-transform">
                   💰
                 </div>
-                <span className="text-xs font-bold text-green-600 bg-green-50 px-2 py-1 rounded-lg">
-                  +12%
-                </span>
               </div>
               <p className="text-sm text-slate-500 font-medium mb-1">
                 Total Pendapatan
@@ -502,7 +478,6 @@ export default function Home() {
                 {formatRp(summary.revenue)}
               </h3>
             </div>
-
             <div className="bg-white p-6 rounded-2xl shadow-sm border border-slate-100 hover:shadow-md transition-shadow group">
               <div className="flex justify-between items-start mb-4">
                 <div className="p-3 bg-orange-50 text-orange-500 rounded-xl text-2xl group-hover:scale-110 transition-transform">
@@ -516,7 +491,6 @@ export default function Home() {
                 {summary.top_product}
               </h3>
             </div>
-
             <div className="bg-white p-6 rounded-2xl shadow-sm border border-slate-100 hover:shadow-md transition-shadow group">
               <div className="flex justify-between items-start mb-4">
                 <div className="p-3 bg-blue-50 text-blue-500 rounded-xl text-2xl group-hover:scale-110 transition-transform">
@@ -537,7 +511,6 @@ export default function Home() {
             </div>
           </div>
 
-          {/* PREDICTIONS */}
           <div className="space-y-8 mb-12">
             <div className="flex items-center gap-3 mb-6">
               <h2 className="text-xl font-bold text-slate-800">
@@ -545,7 +518,6 @@ export default function Home() {
               </h2>
               <div className="h-1 flex-1 bg-slate-100 rounded-full"></div>
             </div>
-
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
               {predictions.map((p) => {
                 const realP = products.find((prod) => prod.id === p.product_id);
@@ -596,7 +568,6 @@ export default function Home() {
                         + Stok
                       </button>
                     </div>
-
                     <div className="p-6">
                       <p className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-3">
                         Prediksi 5 Hari
@@ -605,25 +576,29 @@ export default function Home() {
                         {p.weekly_forecast.map((d, i) => (
                           <div
                             key={i}
-                            className={`min-w-[90px] p-3 rounded-xl border flex flex-col items-center gap-2 transition-colors ${
-                              i === 0
-                                ? "bg-blue-50 border-blue-200"
-                                : "bg-white border-slate-100"
-                            }`}
+                            className={`min-w-[90px] p-3 rounded-xl border flex flex-col items-center gap-2 transition-colors ${getAdviceStyle(
+                              d.advice
+                            )}`}
                           >
-                            <span className="text-[10px] font-bold text-slate-400 uppercase">
+                            <span className="text-[10px] font-bold uppercase opacity-70">
                               {i === 0 ? "Besok" : d.date}
                             </span>
                             <span className="text-2xl">
-                              {d.weather === "Rain"
+                              {d.weather === "Hujan"
                                 ? "🌧️"
-                                : d.weather === "Clear"
+                                : d.weather === "Cerah"
                                 ? "☀️"
                                 : "☁️"}
                             </span>
-                            <span className="text-sm font-bold text-slate-800">
-                              {d.sales}
-                            </span>
+                            <div className="text-center">
+                              <span className="text-sm font-bold block">
+                                {d.sales}
+                              </span>
+                              {/* PESAN SARAN MUNCUL DISINI */}
+                              <span className="text-[9px] uppercase font-bold tracking-tighter leading-tight block mt-1">
+                                {d.advice}
+                              </span>
+                            </div>
                           </div>
                         ))}
                       </div>
@@ -634,7 +609,6 @@ export default function Home() {
             </div>
           </div>
 
-          {/* CHARTS */}
           <div className="mb-20">
             <div className="flex items-center gap-3 mb-6">
               <h2 className="text-xl font-bold text-slate-800">
@@ -719,18 +693,16 @@ export default function Home() {
         </div>
       )}
 
-      {/* FAB */}
       <button
         onClick={() => setIsModalOpen(true)}
         className="fixed bottom-8 right-8 bg-blue-600 hover:bg-blue-700 text-white p-4 rounded-full shadow-2xl shadow-blue-500/40 transition-all hover:scale-110 flex items-center gap-3 z-40 group pr-6"
       >
         <span className="text-2xl group-hover:-rotate-12 transition-transform">
           📝
-        </span>
+        </span>{" "}
         <span className="font-bold text-lg hidden md:inline">Jual Barang</span>
       </button>
 
-      {/* MODAL SALES */}
       {isModalOpen && (
         <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50 p-4 animate-in fade-in zoom-in duration-200">
           <div className="bg-white p-8 rounded-3xl w-full max-w-sm shadow-2xl">
@@ -780,12 +752,13 @@ export default function Home() {
                       })
                     }
                   >
-                    <option value={0}>Pilih Produk...</option>
+                    {" "}
+                    <option value={0}>Pilih Produk...</option>{" "}
                     {products.map((p) => (
                       <option key={p.id} value={p.id}>
                         {p.name} (Sisa: {p.stock})
                       </option>
-                    ))}
+                    ))}{" "}
                   </select>
                   <div className="absolute right-4 top-3.5 pointer-events-none text-slate-400">
                     ▼
@@ -822,7 +795,6 @@ export default function Home() {
         </div>
       )}
 
-      {/* MODAL RESTOCK */}
       {isRestockOpen && (
         <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50 p-4 animate-in fade-in zoom-in duration-200">
           <div className="bg-white p-8 rounded-3xl w-full max-w-sm shadow-2xl border-t-8 border-green-500">
