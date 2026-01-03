@@ -14,24 +14,3 @@ COPY . /code
 # Buka port 7860 (Port standar Hugging Face)
 # Dan jalankan aplikasi
 CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "7860"]
-```
-
-5.  Pastikan file `backend/requirements.txt` isinya sudah lengkap seperti ini:
-    ```text
-    fastapi
-    uvicorn
-    pandas
-    scikit-learn
-    supabase
-    requests
-    joblib
-    pydantic
-    python-dotenv
-    ```
-
-6.  **Simpan & Upload ke GitHub:**
-    Buka terminal di folder utama `smart-merchant`:
-    ```bash
-    git add .
-    git commit -m "Add Dockerfile for Hugging Face"
-    git push
